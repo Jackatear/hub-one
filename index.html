@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Hub One Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen trainer console — big live numbers up top, mode controls beneath, 10-min trace, ride totals. Dark by choice: readable from the saddle. */
+:root{
+  --bg:#0f1513;        /* deep fell slate */
+  --panel:#18201d;
+  --line:#2a3530;
+  --fg:#e7ece8;
+  --muted:#93a39b;
+  --accent:#e08a3c;    /* bracken orange: power + targets */
+  --cool:#6fb7a8;      /* tarn teal: cadence */
+  --good:#7cc48a; --warn:#e3b448; --bad:#e06a5a;
+  --num:"Barlow Condensed","Roboto Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--body);font-size:15px;line-height:1.45}
+body{padding:max(12px,env(safe-area-inset-top)) 16px max(20px,env(safe-area-inset-bottom))}
+.wrap{max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--num);font-weight:700;font-size:1.6rem;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:.8rem;padding:4px 10px;border-radius:99px;border:1px solid var(--line);color:var(--muted)}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.on{color:var(--good)} .pill.on::before{background:var(--good)}
+.pill.busy{color:var(--warn)} .pill.busy::before{background:var(--warn)}
+.pill.demo{color:var(--accent)} .pill.demo::before{background:var(--accent)}
+.spacer{flex:1}
+button{font:inherit;color:var(--fg);background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:9px 14px;cursor:pointer;touch-action:manipulation}
+button:hover{border-color:var(--muted)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.primary{background:var(--accent);border-color:var(--accent);color:#1a1009;font-weight:600}
+button:disabled{opacity:.45;cursor:not-allowed}
+.notice{background:var(--panel);border:1px solid var(--warn);border-radius:10px;padding:12px 14px;font-size:.9rem}
+.notice b{color:var(--warn)}
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media (min-width:860px){.grid{grid-template-columns:1.25fr 1fr}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.label{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.big{font-family:var(--num);font-weight:700;font-variant-numeric:tabular-nums;line-height:.9}
+.power .big{font-size:clamp(5rem,22vw,9rem);color:var(--accent)}
+.power .unit{font-family:var(--num);font-size:1.6rem;color:var(--muted);margin-left:6px}
+.power-row{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.target{font-family:var(--num);font-size:1.3rem;color:var(--muted)}
+.target b{color:var(--fg)}
+.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.metric .big{font-size:clamp(2.2rem,9vw,3.2rem)}
+.metric small{font-family:var(--num);font-size:1rem;color:var(--muted);margin-left:3px}
+#cad{color:var(--cool)}
+.tabs{display:flex;gap:6px;background:var(--bg);padding:4px;border-radius:9px;border:1px solid var(--line)}
+.tabs button{flex:1;border:0;background:transparent;color:var(--muted);padding:8px}
+.tabs button[aria-selected="true"]{background:var(--panel);color:var(--fg);box-shadow:inset 0 -2px 0 var(--accent)}
+.setpoint{display:flex;align-items:center;justify-content:center;gap:10px;margin:14px 0 10px}
+.setpoint .big{font-size:3.6rem;min-width:4.5ch;text-align:center}
+.setpoint .u{font-family:var(--num);font-size:1.2rem;color:var(--muted)}
+.steps{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.steps button{font-family:var(--num);font-size:1.25rem;font-weight:600;padding:10px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chips button{font-size:.85rem;padding:6px 11px;border-radius:99px}
+input[type=range]{width:100%;accent-color:var(--accent);margin-top:12px}
+.hint{font-size:.82rem;color:var(--muted);margin:10px 0 0}
+canvas{width:100%;height:180px;display:block}
+.totals{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.totals .big{font-size:1.9rem}
+@media (max-width:480px){.totals{grid-template-columns:repeat(2,1fr)}}
+.setpoint .big{transition:color .25s}
+.setpoint .big.flash{color:var(--accent);transition:none}
+.log{font-size:.82rem;color:var(--muted);min-height:1.2em}
+.log.err{color:var(--bad)}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Hub One Control</h1>
+    <span id="status" class="pill">Not connected</span>
+    <span class="spacer"></span>
+    <span id="clickStatus" class="pill">Click: off</span>
+    <div class="row">
+      <button id="demoBtn" type="button">Demo</button>
+      <button id="clickBtn" type="button">Connect Click</button>
+      <button id="connectBtn" class="primary" type="button">Connect trainer</button>
+    </div>
+  </header>
+
+  <div id="noBt" class="notice" hidden>
+    <b>This browser can't use Bluetooth.</b> Open this file in Chrome or Edge on Android, Windows, Mac or ChromeOS. On iPhone/iPad, open it in the free <b>Bluefy</b> browser. Tap Demo to try the controls meanwhile.
+  </div>
+
+  <div class="grid">
+    <div class="col">
+      <section class="card power" aria-label="Power">
+        <div class="label">Power</div>
+        <div class="power-row">
+          <div><span id="pwr" class="big">—</span><span class="unit">W</span></div>
+          <div id="tgtLine" class="target"></div>
+        </div>
+      </section>
+      <section class="metrics">
+        <div class="card metric"><div class="label">Cadence</div><span id="cad" class="big">—</span><small>rpm</small></div>
+        <div class="card metric"><div class="label">Speed</div><span id="spd" class="big">—</span><small>km/h</small></div>
+        <div class="card metric"><div class="label">Heart rate</div><span id="hr" class="big">—</span><small>bpm</small></div>
+      </section>
+      <section class="card" aria-label="Power trace">
+        <div class="label">Last 10 minutes</div>
+        <canvas id="chart" aria-label="Power over the last ten minutes"></canvas>
+      </section>
+    </div>
+
+    <div class="col">
+      <section class="card" aria-label="Trainer mode">
+        <div class="tabs" role="tablist">
+          <button id="tabErg" role="tab" aria-selected="true" type="button">ERG</button>
+          <button id="tabSlope" role="tab" aria-selected="false" type="button">Slope</button>
+        </div>
+
+        <div id="ergPanel">
+          <div class="setpoint"><span id="ergVal" class="big">180</span><span class="u">W</span></div>
+          <div class="steps">
+            <button type="button" data-erg="-25">−25</button>
+            <button type="button" data-erg="-5">−5</button>
+            <button type="button" data-erg="5">+5</button>
+            <button type="button" data-erg="25">+25</button>
+          </div>
+          <div class="chips">
+            <button type="button" data-ergset="120">120</button>
+            <button type="button" data-ergset="160">160</button>
+            <button type="button" data-ergset="200">200</button>
+            <button type="button" data-ergset="240">240</button>
+            <button type="button" data-ergset="280">280</button>
+            <button type="button" data-ergset="320">320</button>
+          </div>
+          <p class="hint">Trainer holds this wattage whatever your cadence. Click + / − changes it by 5 W.</p>
+        </div>
+
+        <div id="slopePanel" hidden>
+          <div class="setpoint"><span id="slopeVal" class="big">0.0</span><span class="u">%</span></div>
+          <div class="steps">
+            <button type="button" data-slope="-1">−1</button>
+            <button type="button" data-slope="-0.5">−0.5</button>
+            <button type="button" data-slope="0.5">+0.5</button>
+            <button type="button" data-slope="1">+1</button>
+          </div>
+          <input id="slopeRange" type="range" min="-5" max="15" step="0.5" value="0" aria-label="Slope">
+          <div class="chips">
+            <button type="button" data-slopeset="0">Flat</button>
+            <button type="button" data-slopeset="3">3%</button>
+            <button type="button" data-slopeset="6">6%</button>
+            <button type="button" data-slopeset="9">9%</button>
+            <button type="button" data-slopeset="12">12%</button>
+          </div>
+          <p class="hint">Simulates a climb. Click + / − changes it by 0.5%, which works like gears.</p>
+        </div>
+      </section>
+
+      <section class="card" aria-label="Ride totals">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div class="label">This ride</div>
+          <button id="resetBtn" type="button" style="padding:5px 10px;font-size:.8rem">Reset</button>
+        </div>
+        <div class="totals">
+          <div><div class="label">Time</div><div id="tTime" class="big">0:00</div></div>
+          <div><div class="label">Avg W</div><div id="tAvg" class="big">—</div></div>
+          <div><div class="label">kJ</div><div id="tKj" class="big">0</div></div>
+          <div><div class="label">km</div><div id="tKm" class="big">0.0</div></div>
+        </div>
+      </section>
+      <div id="log" class="log" role="status"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // ---- FTMS (Fitness Machine Service) UUIDs ----
+  const FTMS = 0x1826, IBD = 0x2ad2, CP = 0x2ad9, STATUS = 0x2ada, PWR_RANGE = 0x2ad8;
+  const $ = id => document.getElementById(id);
+
+  const S = {
+    mode: 'erg', erg: 180, slope: 0,
+    live: { power: null, cadence: null, speed: null, hr: null, t: 0 },
+    hist: [],              // {p, tgt} one per second, max 600
+    ride: { secs: 0, joules: 0, metres: 0 },
+    device: null, cp: null, connected: false, demo: false,
+    pwrMin: 0, pwrMax: 1500
+  };
+  try { const saved = JSON.parse(localStorage.getItem('hub1') || '{}');
+        if (saved.erg) S.erg = saved.erg; if (typeof saved.slope === 'number') S.slope = saved.slope;
+        if (saved.mode) S.mode = saved.mode; } catch (e) {}
+  const save = () => { try { localStorage.setItem('hub1', JSON.stringify({ erg: S.erg, slope: S.slope, mode: S.mode })); } catch (e) {} };
+
+  // ---- UI helpers ----
+  function log(msg, err) { const el = $('log'); el.textContent = msg; el.className = 'log' + (err ? ' err' : ''); }
+  function setStatus(text, cls) { const el = $('status'); el.textContent = text; el.className = 'pill ' + (cls || ''); }
+
+  if (!navigator.bluetooth) { $('noBt').hidden = false; $('connectBtn').disabled = true; }
+
+  // ---- Control point: one command at a time, wait for the trainer's reply ----
+  let chain = Promise.resolve(), pending = null;
+  function sendNow(bytes) {
+    return new Promise(async (res, rej) => {
+      const timer = setTimeout(() => { pending = null; rej(new Error('Trainer did not reply')); }, 3000);
+      pending = { op: bytes[0], done: ok => { clearTimeout(timer); res(ok); } };
+      try {
+        const data = new Uint8Array(bytes);
+        if (S.cp.writeValueWithResponse) await S.cp.writeValueWithResponse(data); else await S.cp.writeValue(data);
+      } catch (e) { clearTimeout(timer); pending = null; rej(e); }
+    });
+  }
+  function send(bytes) {
+    if (!S.cp || !S.connected) return Promise.resolve(false);
+    const p = chain.then(() => sendNow(bytes));
+    chain = p.catch(() => {});
+    return p;
+  }
+  function onCP(e) {
+    const dv = e.target.value;
+    if (dv.byteLength >= 3 && dv.getUint8(0) === 0x80 && pending && dv.getUint8(1) === pending.op) {
+      const p = pending; pending = null; p.done(dv.getUint8(2) === 0x01);
+    }
+  }
+  const i16 = v => [v & 0xff, (v >> 8) & 0xff];
+
+  async function applyMode() {
+    save(); render();
+    if (S.demo || !S.connected) return;
+    try {
+      let ok;
+      if (S.mode === 'erg') {
+        const w = Math.max(S.pwrMin, Math.min(S.pwrMax, S.erg));
+        ok = await send([0x05, ...i16(w)]);                                    // Set Target Power
+      } else {
+        const g = Math.round(S.slope * 100);                                    // 0.01 % units
+        ok = await send([0x11, 0x00, 0x00, ...i16(g), 40, 51]);                 // Sim: wind 0, grade, Crr .004, Cw .51
+      }
+      log(ok ? (S.mode === 'erg' ? `Target set: ${S.erg} W` : `Slope set: ${S.slope.toFixed(1)}%`)
+             : 'Trainer refused that command', !ok);
+    } catch (e) { log(e.message, true); }
+  }
+  let debounce;
+  const applySoon = () => { render(); clearTimeout(debounce); debounce = setTimeout(applyMode, 300); };
+
+  // ---- Parse Indoor Bike Data (0x2AD2) ----
+  function parseIBD(dv) {
+    const r = {}, n = dv.byteLength; let i = 2;
+    if (n < 2) return r;
+    const f = dv.getUint16(0, true);
+    const has = k => i + k <= n;
+    if (!(f & 0x0001)) { if (!has(2)) return r; r.speed = dv.getUint16(i, true) / 100; i += 2; }
+    if (f & 0x0002) i += 2;                                      // avg speed
+    if (f & 0x0004) { if (!has(2)) return r; r.cadence = dv.getUint16(i, true) / 2; i += 2; }
+    if (f & 0x0008) i += 2;                                      // avg cadence
+    if (f & 0x0010) i += 3;                                      // total distance
+    if (f & 0x0020) i += 2;                                      // resistance level
+    if (f & 0x0040) { if (!has(2)) return r; r.power = dv.getInt16(i, true); i += 2; }
+    if (f & 0x0080) i += 2;                                      // avg power
+    if (f & 0x0100) i += 5;                                      // energy
+    if (f & 0x0200) { if (!has(1)) return r; r.hr = dv.getUint8(i); i += 1; }
+    return r;
+  }
+  function onIBD(e) { Object.assign(S.live, parseIBD(e.target.value), { t: Date.now() }); }
+
+  // ---- Connect ----
+  async function connect() {
+    try {
+      setStatus('Pairing…', 'busy'); log('Pick your Zwift Hub in the list. Close Zwift and the Companion app first.');
+      const device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [FTMS] }, { namePrefix: 'Zwift' }],
+        optionalServices: [FTMS, 0x180a]
+      });
+      S.device = device;
+      device.addEventListener('gattserverdisconnected', onDisconnect);
+      await setup();
+    } catch (e) {
+      setStatus('Not connected');
+      if (e.name !== 'NotFoundError') log(e.message, true); else log('No trainer chosen.');
+    }
+  }
+  async function setup() {
+    setStatus('Connecting…', 'busy');
+    const server = await S.device.gatt.connect();
+    const svc = await server.getPrimaryService(FTMS);
+    const ibd = await svc.getCharacteristic(IBD);
+    ibd.addEventListener('characteristicvaluechanged', onIBD);
+    await ibd.startNotifications();
+    try { const st = await svc.getCharacteristic(STATUS); await st.startNotifications(); } catch (e) {}
+    try {
+      const pr = await (await svc.getCharacteristic(PWR_RANGE)).readValue();
+      S.pwrMin = Math.max(0, pr.getInt16(0, true)); S.pwrMax = pr.getInt16(2, true) || 1500;
+    } catch (e) {}
+    S.cp = await svc.getCharacteristic(CP);
+    S.cp.addEventListener('characteristicvaluechanged', onCP);
+    await S.cp.startNotifications();
+    S.connected = true; stopDemo();
+    setStatus(S.device.name || 'Connected', 'on');
+    $('connectBtn').textContent = 'Disconnect';
+    const ctrl = await send([0x00]).catch(() => false);                     // Request Control
+    if (!ctrl) log('Connected, but the trainer did not grant control. Is Zwift still open?', true);
+    await send([0x07]).catch(() => {});                                     // Start / Resume
+    await applyMode();
+    try { await navigator.wakeLock?.request('screen'); } catch (e) {}
+  }
+  let manualDisconnect = false;
+  async function onDisconnect() {
+    S.connected = false; S.cp = null; pending = null; chain = Promise.resolve();
+    $('connectBtn').textContent = 'Connect trainer';
+    if (manualDisconnect) { manualDisconnect = false; setStatus('Not connected'); log('Disconnected.'); return; }
+    setStatus('Reconnecting…', 'busy'); log('Lost the trainer. Trying again…', true);
+    for (let a = 0; a < 3 && S.device; a++) {
+      await new Promise(r => setTimeout(r, 1500));
+      try { await setup(); log('Reconnected.'); return; } catch (e) {}
+    }
+    setStatus('Not connected'); log('Could not reconnect. Tap Connect trainer.', true);
+  }
+  $('connectBtn').onclick = () => {
+    if (S.connected && S.device) { manualDisconnect = true; S.device.gatt.disconnect(); }
+    else connect();
+  };
+
+  // ---- Demo: fake rider so the controls can be tried without a trainer ----
+  let demoTimer = null, demoCad = 88;
+  function startDemo() {
+    S.demo = true; setStatus('Demo', 'demo'); $('demoBtn').textContent = 'Stop demo';
+    log('Demo data. Nothing is sent to a trainer.');
+    demoTimer = setInterval(() => {
+      demoCad += (Math.random() - .5) * 3; demoCad = Math.max(70, Math.min(100, demoCad));
+      const want = S.mode === 'erg' ? S.erg : 140 + S.slope * 22 + (demoCad - 85) * 2;
+      const prev = S.live.power ?? want;
+      const p = Math.round(prev + (want - prev) * .35 + (Math.random() - .5) * 12);
+      S.live = { power: p, cadence: Math.round(demoCad),
+                 speed: Math.max(5, 34 - S.slope * 1.9 + (p - 180) / 25), hr: Math.round(105 + p / 4), t: Date.now() };
+    }, 500);
+  }
+  function stopDemo() {
+    if (!S.demo) return;
+    clearInterval(demoTimer); S.demo = false; $('demoBtn').textContent = 'Demo';
+    if (!S.connected) { setStatus('Not connected'); S.live = { power: null, cadence: null, speed: null, hr: null, t: 0 }; }
+  }
+  $('demoBtn').onclick = () => S.demo ? (stopDemo(), log('')) : startDemo();
+
+  // ---- Controls ----
+  function setMode(m) { S.mode = m; applyMode(); }
+  $('tabErg').onclick = () => setMode('erg');
+  $('tabSlope').onclick = () => setMode('slope');
+  document.querySelectorAll('[data-erg]').forEach(b => b.onclick = () => { S.erg = Math.max(0, Math.min(S.pwrMax, S.erg + +b.dataset.erg)); applySoon(); });
+  document.querySelectorAll('[data-ergset]').forEach(b => b.onclick = () => { S.erg = +b.dataset.ergset; applySoon(); });
+  const clampSlope = v => Math.max(-5, Math.min(15, Math.round(v * 2) / 2));
+  document.querySelectorAll('[data-slope]').forEach(b => b.onclick = () => { S.slope = clampSlope(S.slope + +b.dataset.slope); applySoon(); });
+  document.querySelectorAll('[data-slopeset]').forEach(b => b.onclick = () => { S.slope = +b.dataset.slopeset; applySoon(); });
+  $('slopeRange').oninput = e => { S.slope = clampSlope(+e.target.value); applySoon(); };
+  $('resetBtn').onclick = () => { S.ride = { secs: 0, joules: 0, metres: 0 }; S.hist = []; render(); };
+
+  // ---- Zwift Click (v1): plain "RideOn" handshake, then 0x37 button frames ----
+  const Z_SVC = '00000001-19ca-4651-86e5-fa29dcdd09d1',
+        Z_ASYNC = '00000002-19ca-4651-86e5-fa29dcdd09d1',
+        Z_RX = '00000003-19ca-4651-86e5-fa29dcdd09d1',
+        Z_TX = '00000004-19ca-4651-86e5-fa29dcdd09d1';
+  const RIDE_ON = [0x52, 0x69, 0x64, 0x65, 0x4f, 0x6e];
+  const K = { dev: null, on: false, plus: false, minus: false, manualOff: false };
+  if (!navigator.bluetooth) $('clickBtn').disabled = true;
+
+  function nudge(dir) {                       // dir: +1 harder, -1 easier
+    if (S.mode === 'erg') { S.erg = Math.max(0, Math.min(S.pwrMax, S.erg + dir * 5)); }
+    else { S.slope = clampSlope(S.slope + dir * 0.5); }
+    const el = $(S.mode === 'erg' ? 'ergVal' : 'slopeVal');
+    el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 120);
+    applySoon();
+  }
+
+  // Protobuf: field 1 = plus, field 2 = minus; value 0 = pressed, 1 = released; missing field = pressed.
+  function parseClick(bytes) {
+    let plus = 0, minus = 0, i = 0;
+    while (i < bytes.length) {
+      const key = bytes[i++], field = key >> 3, wire = key & 7;
+      if (wire !== 0) return null;
+      let v = 0, shift = 0, b;
+      do { if (i >= bytes.length) return null; b = bytes[i++]; v |= (b & 0x7f) << shift; shift += 7; } while (b & 0x80);
+      if (field === 1) plus = v; else if (field === 2) minus = v;
+    }
+    return { plus: plus === 0, minus: minus === 0 };
+  }
+  function onClickData(e) {
+    const dv = e.target.value, bytes = new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+    if (!bytes.length) return;
+    if (bytes[0] === 0x19 && bytes.length >= 3) { $('clickStatus').textContent = `Click: ${bytes[2]}%`; return; } // battery
+    if (bytes[0] !== 0x37) return;
+    const st = parseClick(bytes.subarray(1)); if (!st) return;
+    if (st.plus && !K.plus) nudge(+1);       // act on press, ignore repeats and release
+    if (st.minus && !K.minus) nudge(-1);
+    K.plus = st.plus; K.minus = st.minus;
+  }
+  async function clickSetup() {
+    $('clickStatus').textContent = 'Click: connecting…'; $('clickStatus').className = 'pill busy';
+    const server = await K.dev.gatt.connect();
+    const svc = await server.getPrimaryService(Z_SVC);
+    const a = await svc.getCharacteristic(Z_ASYNC), tx = await svc.getCharacteristic(Z_TX), rx = await svc.getCharacteristic(Z_RX);
+    a.addEventListener('characteristicvaluechanged', onClickData);
+    tx.addEventListener('characteristicvaluechanged', onClickData);
+    await a.startNotifications(); await tx.startNotifications();
+    const hello = new Uint8Array(RIDE_ON);
+    if (rx.writeValueWithoutResponse) await rx.writeValueWithoutResponse(hello); else await rx.writeValue(hello);
+    K.on = true; K.plus = K.minus = false;
+    $('clickStatus').textContent = 'Click: ready'; $('clickStatus').className = 'pill on';
+    $('clickBtn').textContent = 'Disconnect Click';
+    log('Click connected. + makes it harder, − makes it easier.');
+  }
+  async function clickConnect() {
+    try {
+      log('Press a button on the Click to wake it, then pick it in the list.');
+      K.dev = await navigator.bluetooth.requestDevice({
+        filters: [{ services: [Z_SVC] }, { namePrefix: 'Zwift Click' }],
+        optionalServices: [Z_SVC, 0x180f]
+      });
+      if (!K.dev._hooked) { K.dev.addEventListener('gattserverdisconnected', clickLost); K.dev._hooked = true; }
+      await clickSetup();
+    } catch (e) {
+      $('clickStatus').textContent = 'Click: off'; $('clickStatus').className = 'pill';
+      if (e.name === 'NotFoundError') log('No Click chosen.');
+      else log(/service/i.test(e.message)
+        ? 'That Click did not offer the expected controls. Update it in Zwift Companion, or it may be a Click v2, which only works with Zwift.'
+        : e.message, true);
+    }
+  }
+  async function clickLost() {
+    K.on = false; $('clickBtn').textContent = 'Connect Click';
+    if (K.manualOff) { K.manualOff = false; $('clickStatus').textContent = 'Click: off'; $('clickStatus').className = 'pill'; return; }
+    for (let a = 0; a < 3 && K.dev; a++) {
+      $('clickStatus').textContent = 'Click: reconnecting…'; $('clickStatus').className = 'pill busy';
+      await new Promise(r => setTimeout(r, 2000));
+      try { await clickSetup(); return; } catch (e) {}
+    }
+    $('clickStatus').textContent = 'Click: asleep'; $('clickStatus').className = 'pill';
+    log('Click went to sleep. Press a button on it, then tap Connect Click.');
+  }
+  $('clickBtn').onclick = () => {
+    if (K.on && K.dev) { K.manualOff = true; K.dev.gatt.disconnect(); } else clickConnect();
+  };
+  // Keyboard fallback: + / − or ↑ / ↓ do the same as the Click.
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === '+' || e.key === '=' || e.key === 'ArrowUp') { nudge(+1); e.preventDefault(); }
+    if (e.key === '-' || e.key === '_' || e.key === 'ArrowDown') { nudge(-1); e.preventDefault(); }
+  });
+
+  // ---- Render ----
+  const fmtTime = s => { const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, x = s % 60;
+    return (h ? h + ':' + String(m).padStart(2, '0') : m) + ':' + String(x).padStart(2, '0'); };
+  function render() {
+    const fresh = Date.now() - S.live.t < 3000, L = S.live;
+    $('pwr').textContent = fresh && L.power != null ? L.power : '—';
+    $('cad').textContent = fresh && L.cadence != null ? Math.round(L.cadence) : '—';
+    $('spd').textContent = fresh && L.speed != null ? L.speed.toFixed(1) : '—';
+    $('hr').textContent = fresh && L.hr ? L.hr : '—';
+    const erg = S.mode === 'erg';
+    $('tabErg').setAttribute('aria-selected', erg); $('tabSlope').setAttribute('aria-selected', !erg);
+    $('ergPanel').hidden = !erg; $('slopePanel').hidden = erg;
+    $('ergVal').textContent = S.erg;
+    $('slopeVal').textContent = (S.slope > 0 ? '+' : '') + S.slope.toFixed(1);
+    $('slopeRange').value = S.slope;
+    $('tgtLine').innerHTML = erg ? `Target <b>${S.erg} W</b>` : `Slope <b>${(S.slope > 0 ? '+' : '') + S.slope.toFixed(1)}%</b>`;
+    const R = S.ride;
+    $('tTime').textContent = fmtTime(R.secs);
+    $('tAvg').textContent = R.secs ? Math.round(R.joules / R.secs) : '—';
+    $('tKj').textContent = Math.round(R.joules / 1000);
+    $('tKm').textContent = (R.metres / 1000).toFixed(1);
+    drawChart();
+  }
+
+  function drawChart() {
+    const c = $('chart'), dpr = window.devicePixelRatio || 1;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; }
+    const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    const css = getComputedStyle(document.documentElement), col = n => css.getPropertyValue(n).trim();
+    const H = S.hist, padL = 34, padB = 4, padT = 8, pw = w - padL, ph = h - padT - padB;
+    let top = 400; for (const s of H) top = Math.max(top, s.p * 1.1, (s.tgt || 0) * 1.15);
+    top = Math.ceil(top / 100) * 100;
+    const y = v => padT + ph - (v / top) * ph, x = i => padL + (i / 599) * pw;
+    g.font = '11px ' + col('--body'); g.textAlign = 'right'; g.textBaseline = 'middle';
+    const step = top > 800 ? 200 : 100;
+    for (let v = 0; v <= top; v += step) {
+      g.strokeStyle = col('--line'); g.lineWidth = 1; g.beginPath(); g.moveTo(padL, y(v) + .5); g.lineTo(w, y(v) + .5); g.stroke();
+      g.fillStyle = col('--muted'); g.fillText(v, padL - 6, Math.min(h - 6, Math.max(6, y(v))));
+    }
+    if (!H.length) return;
+    const off = 600 - H.length;
+    g.beginPath(); g.moveTo(x(off), y(0));
+    H.forEach((s, i) => g.lineTo(x(off + i), y(s.p)));
+    g.lineTo(x(off + H.length - 1), y(0)); g.closePath();
+    g.fillStyle = col('--accent') + '33'; g.fill();
+    g.beginPath(); H.forEach((s, i) => i ? g.lineTo(x(off + i), y(s.p)) : g.moveTo(x(off), y(s.p)));
+    g.strokeStyle = col('--accent'); g.lineWidth = 1.6; g.stroke();
+    g.setLineDash([4, 4]); g.strokeStyle = col('--fg'); g.lineWidth = 1; g.beginPath();
+    let on = false;
+    H.forEach((s, i) => { if (s.tgt == null) { on = false; return; }
+      on ? g.lineTo(x(off + i), y(s.tgt)) : g.moveTo(x(off + i), y(s.tgt)); on = true; });
+    g.stroke(); g.setLineDash([]);
+    const last = H[H.length - 1];
+    g.fillStyle = col('--accent'); g.beginPath(); g.arc(x(599), y(last.p), 3.5, 0, 7); g.fill();
+  }
+
+  // ---- 1 Hz tick: record history and ride totals while pedalling ----
+  setInterval(() => {
+    const L = S.live, fresh = Date.now() - L.t < 3000;
+    if (fresh && L.power != null) {
+      S.hist.push({ p: Math.max(0, L.power), tgt: S.mode === 'erg' ? S.erg : null });
+      if (S.hist.length > 600) S.hist.shift();
+      if ((L.cadence || 0) > 0 || L.power > 0) {
+        S.ride.secs++; S.ride.joules += Math.max(0, L.power); S.ride.metres += (L.speed || 0) / 3.6;
+      }
+    }
+    render();
+  }, 1000);
+  window.addEventListener('resize', drawChart);
+  document.addEventListener('visibilitychange', async () => {
+    if (!document.hidden && S.connected) { try { await navigator.wakeLock?.request('screen'); } catch (e) {} }
+  });
+  render();
+})();
+</script>
+</body>
+</html>

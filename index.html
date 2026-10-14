@@ -75,6 +75,9 @@ canvas{width:100%;height:180px;display:block}
 .setpoint .big.flash{color:var(--accent);transition:none}
 .log{font-size:.82rem;color:var(--muted);min-height:1.2em}
 .log.err{color:var(--bad)}
+.connlog{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:3px;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums;max-height:11rem;overflow-y:auto}
+.connlog li.bad{color:var(--bad)} .connlog li.good{color:var(--good)}
+.connlog time{color:var(--fg);margin-right:8px}
 .row{display:flex;gap:8px;flex-wrap:wrap}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -176,6 +179,16 @@ canvas{width:100%;height:180px;display:block}
         </div>
       </section>
       <div id="log" class="log" role="status"></div>
+      <section class="card" aria-label="Connection log">
+        <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:6px">
+          <div class="label">Connection log</div>
+          <div class="row">
+            <button id="copyLogBtn" type="button" style="padding:5px 10px;font-size:.8rem">Copy</button>
+            <button id="clearLogBtn" type="button" style="padding:5px 10px;font-size:.8rem">Clear</button>
+          </div>
+        </div>
+        <ol id="connLog" class="connlog"></ol>
+      </section>
     </div>
   </div>
 </div>
@@ -270,6 +283,61 @@ canvas{width:100%;height:180px;display:block}
   }
   function onIBD(e) { Object.assign(S.live, parseIBD(e.target.value), { t: Date.now() }); }
 
+  // ---- Connection log: shows when and why the trainer drops ----
+  let connLog = [];
+  try { connLog = JSON.parse(localStorage.getItem('hub1log') || '[]'); } catch (e) {}
+  const hhmm = t => new Date(t).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const dur = ms => { const s = Math.round(ms / 1000); return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s'; };
+  function note(msg, kind) {
+    connLog.push({ t: Date.now(), msg, kind: kind || '' });
+    if (connLog.length > 40) connLog = connLog.slice(-40);
+    try { localStorage.setItem('hub1log', JSON.stringify(connLog)); } catch (e) {}
+    drawLog();
+  }
+  function drawLog() {
+    const ol = $('connLog'); ol.textContent = '';
+    if (!connLog.length) { const li = document.createElement('li'); li.textContent = 'Nothing yet. Connect the trainer and ride.'; ol.appendChild(li); return; }
+    for (const e of connLog.slice().reverse()) {
+      const li = document.createElement('li'); li.className = e.kind;
+      const tm = document.createElement('time'); tm.textContent = hhmm(e.t);
+      li.append(tm, e.msg); ol.appendChild(li);
+    }
+  }
+  $('clearLogBtn').onclick = () => { connLog = []; try { localStorage.removeItem('hub1log'); } catch (e) {} drawLog(); };
+  $('copyLogBtn').onclick = () => {
+    const text = connLog.map(e => hhmm(e.t) + '  ' + e.msg).join('\n') || 'empty';
+    navigator.clipboard?.writeText(text).then(() => log('Log copied.'), () => log('Could not copy. Take a screenshot instead.'));
+  };
+  drawLog();
+  let lastHidden = 0;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { lastHidden = Date.now(); if (S.connected) note('Screen locked or app in background'); }
+    else if (lastHidden && (S.connected || S.device)) note('Screen back on');
+  });
+
+  // ---- Keep the phone awake: Wake Lock where supported, else a silent looping video ----
+  const BLANK_MP4 = 'data:video/mp4;base64,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GnNncGQBAAAAcm9sbAAAAAIAAAAB//8AAAAcc2JncAAAAAByb2xsAAAAAQAAAFAAAAABAAAAYnVkdGEAAABabWV0YQAAAAAAAAAhaGRscgAAAAAAAAAAbWRpcmFwcGwAAAAAAAAAAAAAAAAtaWxzdAAAACWpdG9vAAAAHWRhdGEAAAABAAAAAExhdmY2MC4xNi4xMDAAAAAIZnJlZQAABJJtZGF03gIATGF2YzYwLjMxLjEwMgACMEAOAAACrwYF//+r3EXpvebZSLeWLNgg2SPu73gyNjQgLSBjb3JlIDE2NCByMzEwOCAzMWUxOWY5IC0gSC4yNjQvTVBFRy00IEFWQyBjb2RlYyAtIENvcHlsZWZ0IDIwMDMtMjAyMyAtIGh0dHA6Ly93d3cudmlkZW9sYW4ub3JnL3gyNjQuaHRtbCAtIG9wdGlvbnM6IGNhYmFjPTEgcmVmPTE2IGRlYmxvY2s9MTowOjAgYW5hbHlzZT0weDM6MHgxMzMgbWU9dW1oIHN1Ym1lPTEwIHBzeT0xIHBzeV9yZD0xLjAwOjAuMDAgbWl4ZWRfcmVmPTEgbWVfcmFuZ2U9MjQgY2hyb21hX21lPTEgdHJlbGxpcz0yIDh4OGRjdD0xIGNxbT0wIGRlYWR6b25lPTIxLDExIGZhc3RfcHNraXA9MSBjaHJvbWFfcXBfb2Zmc2V0PS0yIHRocmVhZHM9MSBsb29rYWhlYWRfdGhyZWFkcz0xIHNsaWNlZF90aHJlYWRzPTAgbnI9MCBkZWNpbWF0ZT0xIGludGVybGFjZWQ9MCBibHVyYXlfY29tcGF0PTAgY29uc3RyYWluZWRfaW50cmE9MCBiZnJhbWVzPTggYl9weXJhbWlkPTIgYl9hZGFwdD0yIGJfYmlhcz0wIGRpcmVjdD0zIHdlaWdodGI9MSBvcGVuX2dvcD0wIHdlaWdodHA9MiBrZXlpbnQ9MjUwIGtleWludF9taW49MSBzY2VuZWN1dD00MCBpbnRyYV9yZWZyZXNoPTAgcmNfbG9va2FoZWFkPTYwIHJjPWNyZiBtYnRyZWU9MSBjcmY9NTEuMCBxY29tcD0wLjYwIHFwbWluPTAgcXBtYXg9NjkgcXBzdGVwPTQgaXBfcmF0aW89MS40MCBhcT0xOjEuMDAAgAAAAA1liIEAAz/+wHeBS0StAAAACUGaCS2IK/++gAAAAAlBnhCHEGP/5YEBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwAAAAkBnhgmiCv/6IABGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwAAAAkBnhhGiCv/6IEBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwAAAAkBnhhmiCv/6IEBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwAAAAkBnhitSCv/6IEBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwAAAAkBnhjNSCv/6IEBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAACQGeGO1IK//ogAEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHAAAACQGeGQ1IK//ogAEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBwEYIAcBGCAHARggBw==';
+  let wakeVideo = null, wakeLock = null;
+  async function requestWakeLock() {
+    if (!navigator.wakeLock || document.hidden) return false;
+    try { wakeLock = await navigator.wakeLock.request('screen'); return true; } catch (e) { return false; }
+  }
+  function startKeepAwake() {               // call straight from a tap so the video may play
+    requestWakeLock().then(ok => { if (!ok && !wakeVideo) note('Screen wake lock not supported, using video fallback'); });
+    if (!wakeVideo) {
+      wakeVideo = document.createElement('video');
+      wakeVideo.setAttribute('playsinline', ''); wakeVideo.setAttribute('muted', '');
+      wakeVideo.muted = true; wakeVideo.loop = true; wakeVideo.src = BLANK_MP4;
+      wakeVideo.setAttribute('aria-hidden', 'true');
+      wakeVideo.style.cssText = 'position:fixed;left:0;bottom:0;width:2px;height:2px;opacity:.01;pointer-events:none';
+      document.body.appendChild(wakeVideo);
+    }
+    wakeVideo.play().catch(() => {});
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && S.device) { requestWakeLock(); wakeVideo?.play().catch(() => {}); }
+  });
+
   // ---- Connect ----
   async function connect() {
     try {
@@ -278,14 +346,15 @@ canvas{width:100%;height:180px;display:block}
         filters: [{ services: [FTMS] }, { namePrefix: 'Zwift' }],
         optionalServices: [FTMS, 0x180a]
       });
+      if (S.device !== device) device.addEventListener('gattserverdisconnected', onDisconnect);
       S.device = device;
-      device.addEventListener('gattserverdisconnected', onDisconnect);
       await setup();
     } catch (e) {
       setStatus('Not connected');
       if (e.name !== 'NotFoundError') log(e.message, true); else log('No trainer chosen.');
     }
   }
+  let connectedAt = 0;
   async function setup() {
     setStatus('Connecting…', 'busy');
     const server = await S.device.gatt.connect();
@@ -301,30 +370,46 @@ canvas{width:100%;height:180px;display:block}
     S.cp = await svc.getCharacteristic(CP);
     S.cp.addEventListener('characteristicvaluechanged', onCP);
     await S.cp.startNotifications();
-    S.connected = true; stopDemo();
+    S.connected = true; stopDemo(); connectedAt = Date.now();
     setStatus(S.device.name || 'Connected', 'on');
     $('connectBtn').textContent = 'Disconnect';
+    note('Trainer connected', 'good');
     const ctrl = await send([0x00]).catch(() => false);                     // Request Control
-    if (!ctrl) log('Connected, but the trainer did not grant control. Is Zwift still open?', true);
+    if (!ctrl) { log('Connected, but the trainer did not grant control. Is Zwift still open?', true); note('Trainer refused control (another app may have it)', 'bad'); }
     await send([0x07]).catch(() => {});                                     // Start / Resume
     await applyMode();
-    try { await navigator.wakeLock?.request('screen'); } catch (e) {}
+    requestWakeLock();
   }
-  let manualDisconnect = false;
+  let manualDisconnect = false, reconnecting = false;
   async function onDisconnect() {
+    const wasUp = S.connected;
     S.connected = false; S.cp = null; pending = null; chain = Promise.resolve();
     $('connectBtn').textContent = 'Connect trainer';
-    if (manualDisconnect) { manualDisconnect = false; setStatus('Not connected'); log('Disconnected.'); return; }
-    setStatus('Reconnecting…', 'busy'); log('Lost the trainer. Trying again…', true);
-    for (let a = 0; a < 3 && S.device; a++) {
-      await new Promise(r => setTimeout(r, 1500));
-      try { await setup(); log('Reconnected.'); return; } catch (e) {}
+    if (manualDisconnect) { manualDisconnect = false; setStatus('Not connected'); log('Disconnected.'); note('You disconnected'); return; }
+    if (wasUp) {
+      const dataAge = S.live.t ? Date.now() - S.live.t : null;
+      note(`Trainer dropped after ${dur(Date.now() - connectedAt)}` +
+           (document.hidden ? ' · screen was off' : ' · screen was on') +
+           (dataAge != null ? ` · last data ${dur(dataAge)} before` : ''), 'bad');
     }
-    setStatus('Not connected'); log('Could not reconnect. Tap Connect trainer.', true);
+    if (reconnecting) return;
+    reconnecting = true;
+    const started = Date.now();
+    let attempt = 0;
+    while (S.device && !manualDisconnect && Date.now() - started < 5 * 60 * 1000) {
+      setStatus('Reconnecting…', 'busy'); log(`Lost the trainer. Reconnecting (try ${attempt + 1})…`, true);
+      await new Promise(r => setTimeout(r, Math.min(1000 + attempt * 1000, 5000)));
+      if (S.connected) { reconnecting = false; return; }                     // you reconnected by hand
+      if (document.hidden) continue;                                        // iOS can't reconnect while asleep
+      try { await setup(); reconnecting = false; log(`Reconnected after ${dur(Date.now() - started)}.`); note(`Back after ${dur(Date.now() - started)}`, 'good'); return; }
+      catch (e) { attempt++; }
+    }
+    reconnecting = false;
+    setStatus('Not connected'); log('Could not reconnect. Tap Connect trainer.', true); note('Gave up reconnecting after 5 min', 'bad');
   }
   $('connectBtn').onclick = () => {
     if (S.connected && S.device) { manualDisconnect = true; S.device.gatt.disconnect(); }
-    else connect();
+    else { startKeepAwake(); connect(); }
   };
 
   // ---- Demo: fake rider so the controls can be tried without a trainer ----
@@ -522,9 +607,6 @@ canvas{width:100%;height:180px;display:block}
     render();
   }, 1000);
   window.addEventListener('resize', drawChart);
-  document.addEventListener('visibilitychange', async () => {
-    if (!document.hidden && S.connected) { try { await navigator.wakeLock?.request('screen'); } catch (e) {} }
-  });
   render();
 })();
 </script>
